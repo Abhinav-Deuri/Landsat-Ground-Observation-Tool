@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Landsat Ground Observation Tool</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            background-color: #4CAF50;
+            padding: 20px;
+            text-align: center;
+            color: white;
+            font-size: 24px;
+        }
+
+        #controls {
+            padding: 20px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+        }
+
+        #map {
+            height: 400px;
+            width: 100%;
+        }
+
+        .input-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .input-group input {
+            padding: 10px;
+            margin-right: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            background-color: #f1f1f1;
+        }
+
+        @media (max-width: 600px) {
+            #map {
+                height: 300px;
+            }
+
+            #controls {
+                flex-direction: column;
+            }
+        }
+
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #ffffff;
+            border: 2px solid #4CAF50;
+            border-radius: 10px;
+            padding: 20px;
+            z-index: 1000;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        .modal h2 {
+            margin: 0 0 10px;
+        }
+
+        .modal button {
+            margin-top: 10px;
+        }
+
+        #chartContainer {
+            height: 400px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    Landsat Ground Observation Tool
+</header>
+
+<div id="controls">
+    <div class="input-group">
+        <input type="text" id="location" placeholder="Enter Latitude, Longitude or Place">
+        <button onclick="setLocation()">Set Location</button>
+    </div>
+    <div class="input-group">
+        <label for="cloud-threshold">Cloud Coverage Threshold:</label>
+        <input type="number" id="cloud-threshold" value="15"> %
+    </div>
+    <button onclick="fetchLandsatData()">Fetch Landsat Data</button>
+</div>
+
+<div id="map"></div>
+<div id="chartContainer">
+    <canvas id="spectralChart"></canvas>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script>
+    // Leaflet map initialization
+    const map = L.map('map').setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+    }).addTo(map);
+
+    let marker;
+
+    // Function to place marker and update location
+    function setLocation() {
+        const location = document.getElementById('location').value;
+        const coords = location.split(',');
+
+        if (coords.length === 2) {
+            const lat = parseFloat(coords[0].trim());
+            const lng = parseFloat(coords[1].trim());
+
+            if (!isNaN(lat) && !isNaN(lng)) {
+                if (marker) {
+                    map.removeLayer(marker);
+                }
+
+                marker = L.marker([lat, lng]).addTo(map);
+                map.setView([lat, lng], 10);
+            } else {
+                alert("Invalid coordinates. Please enter valid latitude and longitude.");
+            }
+        } else {
+            alert("Please enter coordinates in the format: Latitude, Longitude");
+        }
+    }
+
+    // Fetch Landsat data based on user input
+    async function fetchLandsatData() {
+        const location = document.getElementById('location').value.split(',');
+        const cloudThreshold = document.getElementById('cloud-threshold').value;
+        const lat = parseFloat(location[0]);
+        const lng = parseFloat(location[1]);
+
+        const url = `https://api.nasa.gov/planetary/earth/assets?lat=${lat}&lon=${lng}&date=2023-12-29&cloud_score=${cloudThreshold}&api_key=WJKucnpB19ZnVt0VuzdRMaeR0eF2kcLTD0NGzny7`;
+        const response = await fetch(url);
+        const data = await response.json();
+
+        displayLandsatData(data);
+    }
+
+    function displayLandsatData(data) {
+        // Create a modal to show the data
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <h2>Landsat Data Retrieved</h2>
+            <p><strong>Date:</strong> ${new Date(data.date).toLocaleString()}</p>
+            <p><strong>ID:</strong> ${data.id}</p>
+            <p><strong>Dataset:</strong> ${data.resource.dataset}</p>
+            <p><strong>Planet:</strong> ${data.resource.planet}</p>
+            <p><a href="${data.url}" target="_blank" style="color: #4CAF50; text-decoration: none;">View Landsat Data</a></p>
+            <button id="downloadCsv" style="background-color: #4CAF50; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer;">Download CSV</button>
+            <button id="closeModal" style="background-color: #4CAF50; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer;">Close</button>
+        `;
+        
+        document.body.appendChild(modal);
+
+        // Close modal functionality
+        document.getElementById('closeModal').addEventListener('click', () => {
+            modal.style.display = 'none';  // Hide the modal
+            document.body.removeChild(modal);  // Remove modal from the DOM
+        });
+
+        // Download CSV functionality
+        document.getElementById('downloadCsv').addEventListener('click', () => {
+            const csvData = [
+                ["Date", "ID", "Dataset", "Planet"],
+                [new Date(data.date).toLocaleString(), data.id, data.resource.dataset, data.resource.planet],
+                ["Bands", "Values"]
+            ];
+
+            // Sample spectral data (you should replace this with actual data from your API)
+            const bands = ['Blue', 'Green', 'Red', 'NIR', 'SWIR1', 'SWIR2'];
+            const values = [0.1, 0.2, 0.3, 0.5, 0.7, 0.9];
+
+            csvData.push(bands);
+            csvData.push(values);
+            downloadCSV(csvData);
+        });
+
+        // Sample spectral data for demonstration (you should replace this with actual data)
+        const spectralData = {
+            bands: ['Blue', 'Green', 'Red', 'NIR', 'SWIR1', 'SWIR2'],
+            values: [0.1, 0.2, 0.3, 0.5, 0.7, 0.9]
+        };
+
+        // Display the spectral graph
+        displaySpectralChart(spectralData);
+    }
+
+    function displaySpectralChart(spectralData) {
+        const ctx = document.getElementById('spectralChart').getContext('2d');
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: spectralData.bands,
+                datasets: [{
+                    label: 'Spectral Signature',
+                    data: spectralData.values,
+                    borderColor: '#4CAF50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+                    borderWidth: 2,
+                    fill: true
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Reflectance'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Spectral Bands'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Function to download CSV
+    function downloadCSV(data) {
+        const csvContent = data.map(e => e.join(",")).join("\n");
+        const encodedUri = encodeURI("data:text/csv;charset=utf-8," + csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "landsat_data.csv");
+            document.body.appendChild(link); // Required for Firefox
+
+            link.click(); // This will download the data file
+            document.body.removeChild(link); // Clean up the DOM
+        }
+
+    </script>
+</body>
+</html>
